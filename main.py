@@ -13,8 +13,7 @@ import pandas as pd
 from pathlib import Path
 
 # Insert path to .skeleton files here
-# path = '/Users/henryp/PycharmProjects/NTURGB+DRNN/Skeleton_Test'
-path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons'
+path = ''
 directory = Path(path)
 
 # Store files as list to be iterated through
