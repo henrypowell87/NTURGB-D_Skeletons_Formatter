@@ -1,39 +1,145 @@
-# Python script to format the NTURGB+D skeletons dataset for Recurrent Neural Network applications.
-# The script iterates through a directory of .skeleton files (determined by the user), drops unnecessary rows, makes
-# each 25*12 frame of data into a 1-D input array for an RNN. Each action is thus stored in the data set as a time
-# series of 1-D arrays of length 25x12=300. Each action is therefore a 300*len(action) array where len(action) = the
-# number of frames for each action.
+"""
+Author: Henry Powell
+Institution: Institute of Neuroscience and Psychology, Glasgow University, Scotland.
+
+Python script for formatting the NTU RGB+D Skeletons data set into a format suitable for most LSTM RNNs. The aim is to
+take each .skeletons files and compress it into a 3D numpy array with [samples, time steps, features] as its dimensions.
+The final data set will thus be a [1, max(len(all_files)) =  600, total_features=56,881*300] numpy array. The data has
+been left normal (i.e. not normalized) for the sake of flexibility.
+
+"""
+
+# Split into batches of 5,171 numpy arrays
+
 
 from __future__ import print_function
 
-import csv
 import numpy as np
 import pandas as pd
 
 from pathlib import Path
 
+
 # Insert path to .skeleton files here
-path = ''
-directory = Path(path)
+path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons/'
 
-# Store files as list to be iterated through
-files = [p for p in directory.iterdir() if p.is_file()]
+# Keep track of total files to be processed
+total_files = 0
 
-# You may have a .CD file hidden in this folder. This drops this from [files] so that the code doesn't run over it.
-files.pop(0)
 
-# Empty list where we will store the whole formatted data set.
-data_set = []
+def filter_missing_samples():
+    # List of files with missing data.
+    missing = ['S001C002P005R002A008', 'S001C002P006R001A008', 'S001C003P002R001A055', 'S001C003P002R002A012',
+               'S001C003P005R002A004', 'S001C003P005R002A005', 'S001C003P005R002A006', 'S001C003P006R002A008',
+               'S002C002P011R002A030', 'S002C003P008R001A020', 'S002C003P010R002A010', 'S002C003P011R002A007',
+               'S002C003P011R002A011', 'S002C003P014R002A007', 'S003C001P019R001A055', 'S003C002P002R002A055',
+               'S003C002P018R002A055', 'S003C003P002R001A055', 'S003C003P016R001A055', 'S003C003P018R002A024',
+               'S004C002P003R001A013', 'S004C002P008R001A009', 'S004C002P020R001A003', 'S004C002P020R001A004',
+               'S004C002P020R001A012', 'S004C002P020R001A020', 'S004C002P020R001A021', 'S004C002P020R001A036',
+               'S005C002P004R001A001', 'S005C002P004R001A003', 'S005C002P010R001A016', 'S005C002P010R001A017',
+               'S005C002P010R001A048', 'S005C002P010R001A049', 'S005C002P016R001A009', 'S005C002P016R001A010',
+               'S005C002P018R001A003', 'S005C002P018R001A028', 'S005C002P018R001A029', 'S005C003P016R002A009',
+               'S005C003P018R002A013', 'S005C003P021R002A057', 'S006C001P001R002A055', 'S006C002P007R001A005',
+               'S006C002P007R001A006', 'S006C002P016R001A043', 'S006C002P016R001A051', 'S006C002P016R001A052',
+               'S006C002P022R001A012', 'S006C002P023R001A020', 'S006C002P023R001A021', 'S006C002P023R001A022',
+               'S006C002P023R001A023', 'S006C002P024R001A018', 'S006C002P024R001A019', 'S006C003P001R002A013',
+               'S006C003P007R002A009', 'S006C003P007R002A010', 'S006C003P007R002A025', 'S006C003P016R001A060',
+               'S006C003P017R001A055', 'S006C003P017R002A013', 'S006C003P017R002A014', 'S006C003P017R002A015',
+               'S006C003P022R002A013', 'S007C001P018R002A050', 'S007C001P025R002A051', 'S007C001P028R001A050',
+               'S007C001P028R001A051', 'S007C001P028R001A052', 'S007C002P008R002A008', 'S007C002P015R002A055',
+               'S007C002P026R001A008', 'S007C002P026R001A009', 'S007C002P026R001A010', 'S007C002P026R001A011',
+               'S007C002P026R001A012', 'S007C002P026R001A050', 'S007C002P027R001A011', 'S007C002P027R001A013',
+               'S007C002P028R002A055', 'S007C003P007R001A002', 'S007C003P007R001A004', 'S007C003P019R001A060',
+               'S007C003P027R002A001', 'S007C003P027R002A002', 'S007C003P027R002A003', 'S007C003P027R002A004',
+               'S007C003P027R002A005', 'S007C003P027R002A006', 'S007C003P027R002A007', 'S007C003P027R002A008',
+               'S007C003P027R002A009', 'S007C003P027R002A010', 'S007C003P027R002A011', 'S007C003P027R002A012',
+               'S007C003P027R002A013', 'S008C002P001R001A009', 'S008C002P001R001A010', 'S008C002P001R001A014',
+               'S008C002P001R001A015', 'S008C002P001R001A016', 'S008C002P001R001A018', 'S008C002P001R001A019',
+               'S008C002P008R002A059', 'S008C002P025R001A060', 'S008C002P029R001A004', 'S008C002P031R001A005',
+               'S008C002P031R001A006', 'S008C002P032R001A018', 'S008C002P034R001A018', 'S008C002P034R001A019',
+               'S008C002P035R001A059', 'S008C002P035R002A002', 'S008C002P035R002A005', 'S008C003P007R001A009',
+               'S008C003P007R001A016', 'S008C003P007R001A017', 'S008C003P007R001A018', 'S008C003P007R001A019',
+               'S008C003P007R001A020', 'S008C003P007R001A021', 'S008C003P007R001A022', 'S008C003P007R001A023',
+               'S008C003P007R001A025', 'S008C003P007R001A026', 'S008C003P007R001A028', 'S008C003P007R001A029',
+               'S008C003P007R002A003', 'S008C003P008R002A050', 'S008C003P025R002A002', 'S008C003P025R002A011',
+               'S008C003P025R002A012', 'S008C003P025R002A016', 'S008C003P025R002A020', 'S008C003P025R002A022',
+               'S008C003P025R002A023', 'S008C003P025R002A030', 'S008C003P025R002A031', 'S008C003P025R002A032',
+               'S008C003P025R002A033', 'S008C003P025R002A049', 'S008C003P025R002A060', 'S008C003P031R001A001',
+               'S008C003P031R002A004', 'S008C003P031R002A014', 'S008C003P031R002A015', 'S008C003P031R002A016',
+               'S008C003P031R002A017', 'S008C003P032R002A013', 'S008C003P033R002A001', 'S008C003P033R002A011',
+               'S008C003P033R002A012', 'S008C003P034R002A001', 'S008C003P034R002A012', 'S008C003P034R002A022',
+               'S008C003P034R002A023', 'S008C003P034R002A024', 'S008C003P034R002A044', 'S008C003P034R002A045',
+               'S008C003P035R002A016', 'S008C003P035R002A017', 'S008C003P035R002A018', 'S008C003P035R002A019',
+               'S008C003P035R002A020', 'S008C003P035R002A021', 'S009C002P007R001A001', 'S009C002P007R001A003',
+               'S009C002P007R001A014', 'S009C002P008R001A014', 'S009C002P015R002A050', 'S009C002P016R001A002',
+               'S009C002P017R001A028', 'S009C002P017R001A029', 'S009C003P017R002A030', 'S009C003P025R002A054',
+               'S010C001P007R002A020', 'S010C002P016R002A055', 'S010C002P017R001A005', 'S010C002P017R001A018',
+               'S010C002P017R001A019', 'S010C002P019R001A001', 'S010C002P025R001A012', 'S010C003P007R002A043',
+               'S010C003P008R002A003', 'S010C003P016R001A055', 'S010C003P017R002A055', 'S011C001P002R001A008',
+               'S011C001P018R002A050', 'S011C002P008R002A059', 'S011C002P016R002A055', 'S011C002P017R001A020',
+               'S011C002P017R001A021', 'S011C002P018R002A055', 'S011C002P027R001A009', 'S011C002P027R001A010',
+               'S011C002P027R001A037', 'S011C003P001R001A055', 'S011C003P002R001A055', 'S011C003P008R002A012',
+               'S011C003P015R001A055', 'S011C003P016R001A055', 'S011C003P019R001A055', 'S011C003P025R001A055',
+               'S011C003P028R002A055', 'S012C001P019R001A060', 'S012C001P019R002A060', 'S012C002P015R001A055',
+               'S012C002P017R002A012', 'S012C002P025R001A060', 'S012C003P008R001A057', 'S012C003P015R001A055',
+               'S012C003P015R002A055', 'S012C003P016R001A055', 'S012C003P017R002A055', 'S012C003P018R001A055',
+               'S012C003P018R001A057', 'S012C003P019R002A011', 'S012C003P019R002A012', 'S012C003P025R001A055',
+               'S012C003P027R001A055', 'S012C003P027R002A009', 'S012C003P028R001A035', 'S012C003P028R002A055',
+               'S013C001P015R001A054', 'S013C001P017R002A054', 'S013C001P018R001A016', 'S013C001P028R001A040',
+               'S013C002P015R001A054', 'S013C002P017R002A054', 'S013C002P028R001A040', 'S013C003P008R002A059',
+               'S013C003P015R001A054', 'S013C003P017R002A054', 'S013C003P025R002A022', 'S013C003P027R001A055',
+               'S013C003P028R001A040', 'S014C001P027R002A040', 'S014C002P015R001A003', 'S014C002P019R001A029',
+               'S014C002P025R002A059', 'S014C002P027R002A040', 'S014C002P039R001A050', 'S014C003P007R002A059',
+               'S014C003P015R002A055', 'S014C003P019R002A055', 'S014C003P025R001A048', 'S014C003P027R002A040',
+               'S015C001P008R002A040', 'S015C001P016R001A055', 'S015C001P017R001A055', 'S015C001P017R002A055',
+               'S015C002P007R001A059', 'S015C002P008R001A003', 'S015C002P008R001A004', 'S015C002P008R002A040',
+               'S015C002P015R001A002', 'S015C002P016R001A001', 'S015C002P016R002A055', 'S015C003P008R002A007',
+               'S015C003P008R002A011', 'S015C003P008R002A012', 'S015C003P008R002A028', 'S015C003P008R002A040',
+               'S015C003P025R002A012', 'S015C003P025R002A017', 'S015C003P025R002A020', 'S015C003P025R002A021',
+               'S015C003P025R002A030', 'S015C003P025R002A033', 'S015C003P025R002A034', 'S015C003P025R002A036',
+               'S015C003P025R002A037', 'S015C003P025R002A044', 'S016C001P019R002A040', 'S016C001P025R001A011',
+               'S016C001P025R001A012', 'S016C001P025R001A060', 'S016C001P040R001A055', 'S016C001P040R002A055',
+               'S016C002P008R001A011', 'S016C002P019R002A040', 'S016C002P025R002A012', 'S016C003P008R001A011',
+               'S016C003P008R002A002', 'S016C003P008R002A003', 'S016C003P008R002A004', 'S016C003P008R002A006',
+               'S016C003P008R002A009', 'S016C003P019R002A040', 'S016C003P039R002A016', 'S017C001P016R002A031',
+               'S017C002P007R001A013', 'S017C002P008R001A009', 'S017C002P015R001A042', 'S017C002P016R002A031',
+               'S017C002P016R002A055', 'S017C003P007R002A013', 'S017C003P008R001A059', 'S017C003P016R002A031',
+               'S017C003P017R001A055', 'S017C003P020R001A059', 'S001C002P006R001A008']
 
-# This variable tracks how many files have been formatted and added to the new data set
-progress = 0
+    missing_skeleton = [path + i + '.skeleton' for i in missing]
+    missing = missing_skeleton
+    del missing_skeleton
+    return missing
 
-# Iteration loop which formats the .skeleton files.
-for file in files:
-        data_list = []
+
+def load_files(path, missing):
+
+    directory = Path(path)
+
+    # Store files as list to be iterated through
+    files = [p for p in directory.iterdir() if p.is_file() and str(p) not in missing]
+
+    # You may have a .CD file hidden in this folder. This drops this from [files] so that the code doesn't run over it.
+    files.pop(0)
+
+    # Keep track of total files we are processing
+    total_files == len(files)
+
+    return files
+
+
+def process_data(files):
+    # This variable tracks how many files have been formatted and added to the new data set
+    progress = 0
+    loaded = list()
+
+    # Iteration loop which formats the .skeleton files.
+    for file in files:
+
+        features = list()
+        row = list()
+
         data = pd.read_csv(file, header=None)
-
-        # This block filters out the irrelevant rows. I.e. everything that not the 25x12 frame data.
         data['length'] = data[0].apply(lambda x: len(x))
         cond = data['length'] > 10
         data = data[cond]
@@ -41,34 +147,56 @@ for file in files:
         data = data[data.index % 26 != 0]
         data = data.drop(columns=['length'])
         data = data.reset_index(drop=True)
-
-        # Split the data into a matrix so each value is in it's own cell so we
-        # now have a 25x12 pd.Dataframe for each frame of the skeleton data.
-        # We then iterate through the data row by row and add it to the data list.
         data = data[0].str.split(" ", expand=True)
-        for i in range(len(data)):
-            data_list.append(data.iloc[i])
+        frames = int(len(data.index) / 25)
 
-        # We now convert the data_list to a numpy array, flatten it into 1 dimension and divide by the number of
-        # joints per frame (25) to give an array of arrays containing each frame of skeletal data.
-        data_list = np.array(data_list, dtype=np.float32)
-        division = len(data_list)/25
-        data_list = data_list.flatten()
-        data_list = np.array(np.split(data_list, division))
-        data_list = data_list.tolist()
-        data_set.append([data_list])
+        # Make features array
+        for j in range(len(data)):
+            row.append(data.iloc[j])
+        row = np.array(row, dtype=np.float32)
+        row = row.flatten()
+        row = np.array(np.split(row, frames))
+        row = row.tolist()
+        features.append(row)
+        features = np.array(features)
+
+        # Pad matrix with zero entries so all inputs are equal sized
+        padding = np.zeros([1, 600 - frames, 300])
+        features = np.append(features, padding, axis=1)
+        loaded.append(features)
+
+        # Sanity check to ensure all the matrices are of the right dimension (Uncomment the below to make check)
+        # print(features.shape)
 
         # This block tracks the progress of the formatting and prints the progress to the terminal.
-        # The "end='\r' argument has only been tested on mac and may not work on other platforms.
+        # The "end='\r' argument has only been tested on macOS and may not work on other platforms.
         # If you don't see any progress on your terminal delete this.
         progress += 1
         perc = progress/(56881/100)
+
+        # Save the array to a new CSV named "skeleton_data_formatted.csv"
         print('Samples Processed: {0}/56,881 - - - Percentage Complete = {1:.2f}%'.format(progress, perc), end='\r')
 
-# Convert the whole data_set to an numpy array.
-data_set = np.array(data_set)
+        if progress == total_files:
+            print('Samples Processed: {0}/56,881 - - - Percentage Complete = {1:.2f}%'.format(progress, 100))
 
-# Save the array to a new CSV named "skeleton_data_formatted.csv"
-with open("skeleton_data_formatted.csv", "w") as f:
-    writer = csv.writer(f)
-    writer.writerows(data_set)
+    # Stack matrices together in 3rd dimension (features)
+    loaded = np.dstack(loaded)
+    return loaded
+
+
+def preprocess_data():
+    missing = filter_missing_samples()
+    files = load_files(path, missing)
+    loaded = process_data(files)
+
+    np.save('skeletons_array', loaded)
+
+    # Sanity check to ensure resulting matrix is of the right shape
+    print('Final Data Dimensions: {}'.format(loaded.shape))
+
+
+preprocess_data()
+
+
+
