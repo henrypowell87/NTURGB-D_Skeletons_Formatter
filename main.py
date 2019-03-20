@@ -6,7 +6,6 @@ Python script for formatting the NTU RGB+D Skeletons data set into a format suit
 take each .skeletons files and compress it into a 3D numpy array with [samples, time steps, features] as its dimensions.
 The final data set will thus be a [1, max(len(all_files)) =  600, total_features=56,881*300] numpy array. The data has
 been left normal (i.e. not normalized) for the sake of flexibility.
-
 """
 
 # Split into batches of 5,171 numpy arrays
