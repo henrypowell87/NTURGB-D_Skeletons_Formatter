@@ -19,10 +19,12 @@ from tensorflow import keras
 
 # Insert path to .skeleton files here
 path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons/'
-# path = '/Users/henryp/PycharmProjects/NTURGB+DRNN/Skeleton_Test'
 
-# Keep track of total files to be processed
+# Keep track of total files processed
 total_files = 0
+
+# List of class numbers labels from data_set
+NTU_classes = [c for c in range(1, 61)]
 
 
 def filter_missing_samples():
@@ -156,7 +158,7 @@ def get_classes(files):
         class_list.append(files[i][class_index+2:class_index+4])
     del class_index
 
-    class_list = [int(c) for c in class_list]
+    class_list = [int(c)-1 for c in class_list]
     class_list = np.array(class_list)
 
     # One-hot encode integers to make suitable for LSTM
@@ -229,7 +231,7 @@ def process_raw_data(files):
     return loaded
 
 
-def preprocess_training(training_split_size=80, fix_total_files=1000):
+def preprocess_training(training_split_size=80, fix_total_files=1000, sanity=False):
 
     print('Processing Training Set')
     missing = filter_missing_samples()
@@ -242,12 +244,15 @@ def preprocess_training(training_split_size=80, fix_total_files=1000):
     np.save('skeletons_array_train_labels', classes)
     # Sanity check to ensure resulting matrix is of the right shape
     print('Final training data dimensions: {}'.format(loaded.shape))
-    # Uncomment below for sanity check for one-hot matrix
-    #print('One-hot classes matrix:\n', classes)
-    print('Final training labels dimensions: {}'.format(classes.shape))
+
+    if sanity:
+        print('One-hot classes matrix:\n', classes)
+    else:
+        pass
+    print('Final training labels dimensions: {} \n'.format(classes.shape))
 
 
-def preprocess_test(training_split_size=80, fix_total_files=1000):
+def preprocess_test(training_split_size=80, fix_total_files=1000, sanity=False):
 
     print('Processing Test Set')
     missing = filter_missing_samples()
@@ -260,17 +265,19 @@ def preprocess_test(training_split_size=80, fix_total_files=1000):
     np.save('skeletons_array_test_labels', classes)
     # Sanity check to ensure resulting matrix is of the right shape
     print('Final Training data dimensions: {}'.format(loaded.shape))
-    # Uncomment below for sanity check for one-hot matrix
-    # print('One-hot classes matrix:\n', classes)
+
+    if sanity:
+        print('One-hot classes matrix:\n', classes)
+    else:
+        pass
+
     print('Final test labels dimensions: {} \n'.format(classes.shape))
 
 
-def get_test_train(training_split_size=80, fix_total_files=1000):
+def get_test_train(training_split_size=80, fix_total_files=1000, sanity=False):
 
-    preprocess_training(training_split_size=training_split_size, fix_total_files=fix_total_files)
-    preprocess_test(training_split_size=training_split_size, fix_total_files=fix_total_files)
-
-    return
+    preprocess_training(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity)
+    preprocess_test(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity)
 
 
-get_test_train(training_split_size=80, fix_total_files=10)
+get_test_train(training_split_size=80, fix_total_files=3000, sanity=False)
