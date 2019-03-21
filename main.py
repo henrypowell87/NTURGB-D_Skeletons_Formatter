@@ -4,7 +4,7 @@ Institution: Institute of Neuroscience and Psychology, Glasgow University, Scotl
 
 Python script for formatting the NTU RGB+D Skeletons data set into a format suitable for most LSTM RNNs. The aim is to
 take each .skeletons files and compress it into a 3D numpy array with [samples, time steps, features] as its dimensions.
-The final data set will thus be a [1, max(len(all_files)) =  600, total_features=56,881*300] numpy array. The data has
+The final data set will thus be a [56,881, max(len(samples(data_files)))=600, 12*25=300] numpy array. The data has
 been left normal (i.e. not normalized) for the sake of flexibility.
 """
 
