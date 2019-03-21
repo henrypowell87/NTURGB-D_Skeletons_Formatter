@@ -8,25 +8,25 @@ The final data set will thus be a [1, max(len(all_files)) =  600, total_features
 been left normal (i.e. not normalized) for the sake of flexibility.
 """
 
-# Split into batches of 5,171 numpy arrays
-
-
 from __future__ import print_function
 
 import numpy as np
 import pandas as pd
+import gc
 
 from pathlib import Path
-
+from tensorflow import keras
 
 # Insert path to .skeleton files here
 path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons/'
+# path = '/Users/henryp/PycharmProjects/NTURGB+DRNN/Skeleton_Test'
 
 # Keep track of total files to be processed
 total_files = 0
 
 
 def filter_missing_samples():
+
     # List of files with missing data.
     missing = ['S001C002P005R002A008', 'S001C002P006R001A008', 'S001C003P002R001A055', 'S001C003P002R002A012',
                'S001C003P005R002A004', 'S001C003P005R002A005', 'S001C003P005R002A006', 'S001C003P006R002A008',
@@ -108,10 +108,11 @@ def filter_missing_samples():
     missing_skeleton = [path + i + '.skeleton' for i in missing]
     missing = missing_skeleton
     del missing_skeleton
+    gc.collect()
     return missing
 
 
-def load_files(path, missing):
+def load_files(path, missing, prop_files=100, batch_type='train', drop_first=True, fix_total_files=30000):
 
     directory = Path(path)
 
@@ -119,15 +120,53 @@ def load_files(path, missing):
     files = [p for p in directory.iterdir() if p.is_file() and str(p) not in missing]
 
     # You may have a .CD file hidden in this folder. This drops this from [files] so that the code doesn't run over it.
-    files.pop(0)
+    if drop_first:
+        files.pop(0)
+    else:
+        pass
 
+    files = files[:fix_total_files]
+
+    # Number of total files before dropping if files_batch_prop < 100
+    total_num_files = len(files)
+    file_percentage = (total_num_files / 100) * prop_files
+
+    # Drop proportion of files you don't want to process
+    if prop_files == 100:
+        files = files
+    elif prop_files != 100 and batch_type == 'train':
+        files = files[:int(file_percentage)]
+    elif prop_files != 100 and batch_type == 'test':
+        files = files[int(file_percentage):]
+    elif prop_files > 100 or prop_files < 0:
+        raise Exception('files_batch_prop should be an integer between 0 and 100. You gave {}'.format(prop_files))
+    gc.collect()
     # Keep track of total files we are processing
-    total_files == len(files)
 
     return files
 
 
-def process_data(files):
+def get_classes(files):
+
+    files = [str(f) for f in files]
+    class_list = list()
+    class_index = files[0].find('A0')
+
+    for i in range(len(files)):
+        class_list.append(files[i][class_index+2:class_index+4])
+    del class_index
+
+    class_list = [int(c) for c in class_list]
+    class_list = np.array(class_list)
+
+    # One-hot encode integers to make suitable for LSTM
+    class_list = keras.utils.to_categorical(class_list)
+    gc.collect()
+    return class_list
+
+
+def process_raw_data(files):
+
     # This variable tracks how many files have been formatted and added to the new data set
     progress = 0
     loaded = list()
@@ -152,11 +191,16 @@ def process_data(files):
         # Make features array
         for j in range(len(data)):
             row.append(data.iloc[j])
-        row = np.array(row, dtype=np.float32)
+        del data
+        gc.collect()
+
+        row = np.array(row, dtype=np.float16)
         row = row.flatten()
         row = np.array(np.split(row, frames))
         row = row.tolist()
         features.append(row)
+        del row
+        gc.collect()
         features = np.array(features)
 
         # Pad matrix with zero entries so all inputs are equal sized
@@ -180,22 +224,53 @@ def process_data(files):
             print('Samples Processed: {0}/56,881 - - - Percentage Complete = {1:.2f}%'.format(progress, 100))
 
     # Stack matrices together in 3rd dimension (features)
-    loaded = np.dstack(loaded)
+    loaded = np.squeeze(loaded, axis=0)
+    loaded = np.stack(loaded, axis=0)
     return loaded
 
 
-def preprocess_data():
+def preprocess_training(training_split_size=80, fix_total_files=1000):
+
+    print('Processing Training Set')
     missing = filter_missing_samples()
-    files = load_files(path, missing)
-    loaded = process_data(files)
+    files = load_files(path, missing, prop_files=training_split_size,
+                       batch_type='train', fix_total_files=fix_total_files)
+    classes = get_classes(files)
+    loaded = process_raw_data(files)
 
-    np.save('skeletons_array', loaded)
-
+    np.save('skeletons_array_train', loaded)
+    np.save('skeletons_array_train_labels', classes)
     # Sanity check to ensure resulting matrix is of the right shape
-    print('Final Data Dimensions: {}'.format(loaded.shape))
+    print('Final training data dimensions: {}'.format(loaded.shape))
+    # Uncomment below for sanity check for one-hot matrix
+    #print('One-hot classes matrix:\n', classes)
+    print('Final training labels dimensions: {}'.format(classes.shape))
 
 
-preprocess_data()
+def preprocess_test(training_split_size=80, fix_total_files=1000):
+
+    print('Processing Test Set')
+    missing = filter_missing_samples()
+    files = load_files(path, missing, prop_files=training_split_size,
+                       batch_type='test', fix_total_files=fix_total_files)
+    classes = get_classes(files)
+    loaded = process_raw_data(files)
+
+    np.save('skeletons_array_test', loaded)
+    np.save('skeletons_array_test_labels', classes)
+    # Sanity check to ensure resulting matrix is of the right shape
+    print('Final Training data dimensions: {}'.format(loaded.shape))
+    # Uncomment below for sanity check for one-hot matrix
+    # print('One-hot classes matrix:\n', classes)
+    print('Final test labels dimensions: {} \n'.format(classes.shape))
 
 
+def get_test_train(training_split_size=80, fix_total_files=1000):
 
+    preprocess_training(training_split_size=training_split_size, fix_total_files=fix_total_files)
+    preprocess_test(training_split_size=training_split_size, fix_total_files=fix_total_files)
+
+    return
+
+
+get_test_train(training_split_size=80, fix_total_files=10)
