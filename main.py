@@ -3,9 +3,10 @@ Author: Henry Powell
 Institution: Institute of Neuroscience and Psychology, Glasgow University, Scotland.
 
 Python script for formatting the NTU RGB+D Skeletons data set into a format suitable for most LSTM RNNs. The aim is to
-take each .skeletons files and compress it into a 3D numpy array with [samples, time steps, features] as its dimensions.
+take each .skeletons file and compress it into a 3D numpy array with [samples, time-steps, features] as its dimensions.
 The final data set will thus be a [56,881, max(len(samples(data_files)))=600, 12*25=300] numpy array. The data has
-been left normal (i.e. not normalized) for the sake of flexibility.
+been left normal (i.e. not normalized) for the sake of flexibility although it is generally recommended to normalize
+the data at some stage in the preprocessing.
 """
 
 from __future__ import print_function
@@ -13,12 +14,14 @@ from __future__ import print_function
 import numpy as np
 import pandas as pd
 import gc
-
+import os
 from pathlib import Path
 from tensorflow import keras
 
 # Insert path to .skeleton files here
-path = ''
+path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons/'
+dest_path = '/Users/henryp/PycharmProjects/NTURGB+DRNN/DataSet/NPArrays'
+dest_directory = Path(dest_path)
 
 # Keep track of total files processed
 total_files = 0
@@ -28,6 +31,13 @@ NTU_classes = [c for c in range(1, 61)]
 
 
 def filter_missing_samples():
+    """ Function to filter out all of the samples from the data set that have no data in them.
+
+        Returns: list object containing str(filenames) of all files with no data
+
+    """
+
+
 
     # List of files with missing data.
     missing = ['S001C002P005R002A008', 'S001C002P006R001A008', 'S001C003P002R001A055', 'S001C003P002R002A012',
@@ -114,7 +124,18 @@ def filter_missing_samples():
     return missing
 
 
-def load_files(path, missing, prop_files=100, batch_type='train', drop_first=True, fix_total_files=30000):
+def load_files(path, missing, fix_total_files=30000, prop_files=100, batch_type='train', drop_first=True):
+
+    """
+    :param path: Path to the data set.
+    :param missing: List of files with no data.
+    :param fix_total_files: Specify the number of data files you want to process up to 56,881
+    :param prop_files: What proportion of the fix_total_files you want to load.
+    :param batch_type: Splits the loaded files into either 80% of total files if batch_type = 'train', or 20% of
+                       total files if batch_type = 'test'.
+    :param drop_first: Stop function from iterating over .CD file if there is one present in the directory.
+    :return: List of .skeleton files as posixpath objects
+    """
 
     directory = Path(path)
 
@@ -127,7 +148,10 @@ def load_files(path, missing, prop_files=100, batch_type='train', drop_first=Tru
     else:
         pass
 
-    files = files[:fix_total_files]
+    if fix_total_files:
+        files = files[:fix_total_files]
+    else:
+        files = files
 
     # Number of total files before dropping if files_batch_prop < 100
     total_num_files = len(files)
@@ -143,12 +167,20 @@ def load_files(path, missing, prop_files=100, batch_type='train', drop_first=Tru
     elif prop_files > 100 or prop_files < 0:
         raise Exception('files_batch_prop should be an integer between 0 and 100. You gave {}'.format(prop_files))
     gc.collect()
-    # Keep track of total files we are processing
 
     return files
 
 
-def get_classes(files):
+def get_classes(files, one_hot=True, subset=True):
+
+    """
+
+    :param files: list of .skeleton files to be processed (must be posixPath object)
+    :param one_hot: translate classes to a one-hot encoding
+    :param subset: specify that you are using a the binary subset of the dataset (Action 1 and Action 3 (A001 & A003)
+    :return: list of classes
+
+    """
 
     files = [str(f) for f in files]
     class_list = list()
@@ -159,15 +191,34 @@ def get_classes(files):
     del class_index
 
     class_list = [int(c)-1 for c in class_list]
+
+    #Delete below when not using 2 class version of the data set
+    class_list = [int(c/2) for c in class_list]
+
     class_list = np.array(class_list)
 
-    # One-hot encode integers to make suitable for LSTM
-    class_list = keras.utils.to_categorical(class_list)
+    if one_hot:
+        # One-hot encode integers to make suitable for LSTM
+        class_list = keras.utils.to_categorical(class_list)
+
+    else:
+        pass
+
     gc.collect()
     return class_list
 
 
-def process_raw_data(files):
+def process_raw_data(files, save_as_ndarray=False, three_d=True, derivative=False):
+
+    """
+    :param files: list of .skeleton files to be processed (must be posixPath object)
+    :param save_as_ndarray: set to True to save the outputted data to an ndarray in the current directory
+    :param derivative: add feature engineered columns to the output. Adds first derivative calculations to each
+                       position point in x,y,z dimensions.
+    :param three_d: set to False if you only want the three d position features for each time frame
+    :return: np.array of dimension (samples, time_steps, features)
+
+    """
 
     # This variable tracks how many files have been formatted and added to the new data set
     progress = 0
@@ -188,6 +239,19 @@ def process_raw_data(files):
         data = data.drop(columns=['length'])
         data = data.reset_index(drop=True)
         data = data[0].str.split(" ", expand=True)
+        data = data.fillna(method='bfill')
+        if three_d:
+            data = data.drop(columns=[3, 4, 5, 6, 7, 8, 9, 10, 11])
+
+        if derivative:
+            x_pos, y_pos, z_pos = np.array(data[0], dtype=np.float32), \
+                                  np.array(data[1], dtype=np.float32), \
+                                  np.array(data[2], dtype=np.float32)
+
+            data[3], data[4], data[5] = pd.Series(np.gradient(x_pos)), \
+                                        pd.Series(np.gradient(y_pos)), \
+                                        pd.Series(np.gradient(z_pos))
+
         frames = int(len(data.index) / 25)
 
         # Make features array
@@ -205,10 +269,16 @@ def process_raw_data(files):
         gc.collect()
         features = np.array(features)
 
-        # Pad matrix with zero entries so all inputs are equal sized
-        padding = np.zeros([1, 600 - frames, 300])
-        features = np.append(features, padding, axis=1)
+        # Only take middle 20 frames
+        mid = len(features[0])//2
+        start = mid - 15
+        end = mid + 15
+        features = features[0][start:end]
+
         loaded.append(features)
+
+        if save_as_ndarray:
+            np.save(os.path.join(dest_path, str(file)), features)
 
         # Sanity check to ensure all the matrices are of the right dimension (Uncomment the below to make check)
         # print(features.shape)
@@ -225,23 +295,32 @@ def process_raw_data(files):
         if progress == total_files:
             print('Samples Processed: {0}/56,881 - - - Percentage Complete = {1:.2f}%'.format(progress, 100))
 
+
+
     # Stack matrices together in 3rd dimension (features)
     loaded = np.squeeze(loaded, axis=0)
     loaded = np.stack(loaded, axis=0)
+
+    #np.save(os.path.join(dest_path, str(file)), loaded)
     return loaded
 
 
-def preprocess_training(training_split_size=80, fix_total_files=1000, sanity=False):
+def preprocess_training(training_split_size=80, fix_total_files=1000, sanity=False, save=True, one_hot=True):
 
     print('Processing Training Set')
+
     missing = filter_missing_samples()
     files = load_files(path, missing, prop_files=training_split_size,
                        batch_type='train', fix_total_files=fix_total_files)
-    classes = get_classes(files)
-    loaded = process_raw_data(files)
+    classes = get_classes(files, one_hot=one_hot)
+    loaded = process_raw_data(files, save_as_ndarray=False)
 
-    np.save('skeletons_array_train', loaded)
-    np.save('skeletons_array_train_labels', classes)
+    if save:
+        np.save('skeletons_array_train_S', loaded)
+        np.save('skeletons_array_train_labels_S', classes)
+    else:
+        pass
+
     # Sanity check to ensure resulting matrix is of the right shape
     print('Final training data dimensions: {}'.format(loaded.shape))
 
@@ -249,20 +328,27 @@ def preprocess_training(training_split_size=80, fix_total_files=1000, sanity=Fal
         print('One-hot classes matrix:\n', classes)
     else:
         pass
+
     print('Final training labels dimensions: {} \n'.format(classes.shape))
 
+    return loaded, classes
 
-def preprocess_test(training_split_size=80, fix_total_files=1000, sanity=False):
+
+def preprocess_test(training_split_size=80, fix_total_files=1000, sanity=False, save=True):
 
     print('Processing Test Set')
     missing = filter_missing_samples()
     files = load_files(path, missing, prop_files=training_split_size,
                        batch_type='test', fix_total_files=fix_total_files)
     classes = get_classes(files)
-    loaded = process_raw_data(files)
+    loaded = process_raw_data(files, save_as_ndarray=False)
 
-    np.save('skeletons_array_test', loaded)
-    np.save('skeletons_array_test_labels', classes)
+    if save:
+        np.save('skeletons_array_test_S', loaded)
+        np.save('skeletons_array_test_labels_S', classes)
+    else:
+        pass
+
     # Sanity check to ensure resulting matrix is of the right shape
     print('Final Training data dimensions: {}'.format(loaded.shape))
 
@@ -273,11 +359,30 @@ def preprocess_test(training_split_size=80, fix_total_files=1000, sanity=False):
 
     print('Final test labels dimensions: {} \n'.format(classes.shape))
 
-
-def get_test_train(training_split_size=80, fix_total_files=1000, sanity=False):
-
-    preprocess_training(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity)
-    preprocess_test(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity)
+    return loaded, classes
 
 
-get_test_train(training_split_size=80, fix_total_files=3000, sanity=False)
+def get_test_train(training_split_size=80, fix_total_files=60, sanity=False, save=True):
+
+    preprocess_training(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity, save=save)
+    preprocess_test(training_split_size=training_split_size, fix_total_files=fix_total_files, sanity=sanity, save=save)
+
+
+def get_partition_labels(files):
+
+    files = [str(f) for f in files]
+    train_list = files[:45505]
+    validation_list = files[45505:]
+
+    classes = get_classes(files, one_hot=False)
+    classes = [c+1 for c in classes]
+
+    partition = {'train': train_list,
+                 'validation': validation_list}
+
+    labels = dict(zip(files, classes))
+
+    return partition, labels
+
+
+get_test_train(training_split_size=80, fix_total_files=1895, sanity=True, save=True)
