@@ -19,8 +19,8 @@ from pathlib import Path
 from tensorflow import keras
 
 # Insert path to .skeleton files here
-path = '/Users/henryp/Documents/DataSets/nturgb+d_skeletons/'
-dest_path = '/Users/henryp/PycharmProjects/NTURGB+DRNN/DataSet/NPArrays'
+path = ''
+dest_path = ''
 dest_directory = Path(dest_path)
 
 # Keep track of total files processed
